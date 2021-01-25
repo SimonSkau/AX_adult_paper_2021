@@ -1,0 +1,25 @@
+%leave one out pearsons r cross validation
+function output = leave_one_out_validation( value_1, value_2 )
+
+% get which of the n participants that should be left out to get
+% all possible jackknife replicates with a delete-two approach
+comb_            = combnk(1:numel( value_1 ),1); 
+
+output = nan( 2, size(comb_,1) );
+
+for j = 1:size(comb_,1) % for each jackknife replicate
+
+    % get all  value_1  and value_2 estimates
+    tmp_V2  = value_2;
+    tmp_V1  = value_1;
+
+    % remove those estimates that should not be included in the
+    % jackknife replicate j
+    tmp_V2( comb_(j,:)) = [];
+    tmp_V1( comb_(j,:)) = [];
+
+    % calculate the partial correlation for the jackknife replicate
+    % i
+    [output(1,j), output(2,j)] = corr( tmp_V1, tmp_V2 , 'rows','complete');
+
+end
