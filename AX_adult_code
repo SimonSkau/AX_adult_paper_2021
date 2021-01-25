@@ -1,0 +1,419 @@
+% Script uses Homer2 functions for fNIRS
+clc
+clear all
+% close all
+
+patcon = {'CSN_AX'};
+patconLength = [30];
+for subType = 1;
+
+for subID = 1:patconLength(subType);
+load([patcon{1} '_' sprintf('%02d',subID)  '.nirs'],'-mat');
+[subID] %to see which data is processed at the moment
+%trange = [-2 12];
+
+fs = length(t)/max(t); 
+tIncMan = ones(size(d(:,1))); 
+
+%Converts internsity (raw data) to optical density
+procResult.dod = hmrIntensity2OD(d); 
+
+ %Prune channels from the measurement list if their signal is too weak, too
+ %strong, or their standard deviation is too great. This function
+ %updates SD.MeasListAct based on whether data 'd' meets these conditions
+ %as specified by'dRange' and 'SNRthresh'.
+procResult.SD = enPruneChannels(d,SD,ones(size(t)),[1e-3  1e+0 ],2,[0.0 40.0],0);
+
+procResult.SD.MeasListAct(end/2+1:end) = procResult.SD.MeasListAct(1:end/2); %This shouldn't be necessary, not sure why it is
+
+% Bandpassfilter
+procResult.dod = hmrBandpassFilt(procResult.dod,fs,0.05,0.5);
+
+
+procResult.tInc = ones(size(t));
+%Try removing 1st principal component from whole dataset
+ncomp = 0; %did not use it, thats way it is 0
+procResult.dod = enPCAFilter(procResult.dod,procResult.SD,procResult.tInc,[ncomp ncomp]);
+
+
+
+%   Identifies motion artifacts in an input data matrix d. If any active 
+%   data channel exhibits a signal change greater than std_thresh or
+%   amp_thresh, then a segment of data around that time point is marked as a
+%   motion artifact. The channel-wise motion artifacts are recorded in the
+%   output matrix tIncCh. If any channel has a motion artifact, it is
+%   indicated by the vector tInc.
+STDEVthresh = 30;
+AMPthresh =  1;
+[procResult.tInc, procResult.tIncCh] = hmrMotionArtifactByChannel(procResult.dod, fs, procResult.SD, ones(length(d),1), 1, 5, STDEVthresh, AMPthresh); %procResult.tInc was before procResult.SD
+
+%   Perform a cubic spline correction of the motion artifacts identified in
+%  tInc. The algorithm follows the procedure describe by
+%  Scholkmann et al., Physiol. Meas. 31, 649-662 (2010). Set p = -1 to skip
+%  this function.
+p = 0.99; %recommended in the littreture, -1 to not use spline
+procResult.dod = hmrMotionCorrectSpline(procResult.dod, t, procResult.SD, [procResult.tInc, procResult.tIncCh], p); %procResult.tIncCh
+%procResult.dodSplinePCA = hmrMotionCorrectSpline(dod_PCA, t, procResult.SD, [procResult.tInc, procResult.tIncCh], p); %procResult.tIncCh
+
+%Convert OD to concentrations
+procResult.dc = hmrOD2Conc(procResult.dod,procResult.SD,[6 6]);
+%procResult.dcPCA = hmrOD2Conc(procResult.dodPCA,procResult.SD,[6 6]);
+
+% This script estimates the HRF with options to specify the temporal basis
+% function type and corresponding parameters, whether or not to perform
+% simultaneous regression of short separation channels, drift order, and
+% whether or not to correct for motion artifacts. You can also choose the
+% method for solving the GLM matrix equation.
+
+trange = [-2 12];
+glmSolveMethod = 1; %least square
+idxBasis = 1; %guassian
+paramsBasis = [0.5 0.5];    %width and spacing for the guassian [0.1 3.0 10.0 1.8 3.0 10.0]; % need to understand this one!!!!!!
+rhoSD_ssThresh = 15;
+flagSSmethod = 1; 
+driftOrder = 3;
+flagMotionCorrect = 0;
+Aaux = []; %zeros(length(d),8);
+%[yavg, yavgstd, tHRF, nTrials, ynew, yresid, ysum2, beta, yR]
+[yHRF_SS, ~, tHRF] = hmrDeconvHRF_DriftSS(procResult.dc, s, t, procResult.SD, Aaux, ones(length(t),1), trange, glmSolveMethod, idxBasis, paramsBasis, rhoSD_ssThresh, flagSSmethod, driftOrder, flagMotionCorrect );
+
+
+% all_chan_1_oxy{subID} = squeeze(yHRF_SS(:,1,:,1));
+% all_chan_2_oxy{subID} = squeeze(yHRF_SS(:,1,:,2));
+% all_chan_3_oxy{subID} = squeeze(yHRF_SS(:,1,:,3));
+% all_chan_4_oxy{subID} = squeeze(yHRF_SS(:,1,:,4));
+% 
+% all_chan_1_deoxy{subID} = squeeze(yHRF_SS(:,2,:,1));
+% all_chan_2_deoxy{subID} = squeeze(yHRF_SS(:,2,:,2));
+% all_chan_3_deoxy{subID} = squeeze(yHRF_SS(:,2,:,3));
+% all_chan_4_deoxy{subID} = squeeze(yHRF_SS(:,2,:,4));
+% 
+% all_chan_1_totoxy{subID} = squeeze(yHRF_SS(:,3,:,1));
+% all_chan_2_totoxy{subID} = squeeze(yHRF_SS(:,3,:,2));
+% all_chan_3_totoxy{subID} = squeeze(yHRF_SS(:,3,:,3));
+% all_chan_4_totoxy{subID} = squeeze(yHRF_SS(:,3,:,4));
+
+% % %Calc HRFs using simple block average;
+% % [yHRF_SS, ~, tHRF] = hmrBlockAvg(procResult.dc, s, t, trange);
+% 
+% hh1 = figure; %Array figure
+% plotProbe(squeeze(yHRF_SS(:,:,:,1)), tHRF, SD, hh1, [], [1 1]);
+% 
+%  hh2 = figure; %Array figure
+%  plotProbe(squeeze(yHRF_SS(:,:,:,2)), tHRF, SD, hh2, [], [1 1]);
+
+% hh3 = figure; %Array figure
+% plotProbe(squeeze(yHRF_SS(:,:,:,3)), tHRF, SD, hh3, [], [1 1]);
+% 
+% hh4 = figure; %Array figure
+% plotProbe(squeeze(yHRF_SS(:,:,:,4)), tHRF, SD, hh4, [], [1 1]);
+
+%ROIs
+F1	=	[	25	26	32	33	];
+F2	=	[	27	28	29	30	];
+F3	=	[	34	35	36		];
+F4	=	[	31	37	38		];
+P1	=	[	1	2	12		];
+P2	=	[	5	7	8		];
+P3	=	[	3	4	11		];
+P4	=	[	6	17	18		];
+P5	=	[	14	15	16		];
+P6	=	[	19	20	22		];
+P7	=	[	13	23	24		];
+P8	=	[	9	10	21		];
+
+% data = zeros([141 42]);
+%Save data
+for n =1:4
+    data{n} = squeeze(yHRF_SS(:,1,:,n));
+    dataD{n} = squeeze(yHRF_SS(:,2,:,n));
+    dataT{n} = squeeze(yHRF_SS(:,3,:,n));
+    
+end
+
+%Save data in ROIs
+for n = 1:4;
+        all_chan_F1_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,F1))')';
+        all_chan_F2_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,F2))')';
+        all_chan_F3_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,F3))')';
+        all_chan_F4_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,F4))')';
+        all_chan_P1_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P1))')';
+        all_chan_P2_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P2))')';
+        all_chan_P3_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P3))')';
+        all_chan_P4_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P4))')';
+        all_chan_P5_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P5))')';
+        all_chan_P6_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P6))')';
+        all_chan_P7_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P7))')';
+        all_chan_P8_oxy{subID}{n} = nanmean(squeeze(data{1,n}(1:141,P8))')';  
+        
+        all_chan_F1_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,F1))')';
+        all_chan_F2_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,F2))')';
+        all_chan_F3_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,F3))')';
+        all_chan_F4_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,F4))')';
+        all_chan_P1_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P1))')';
+        all_chan_P2_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P2))')';
+        all_chan_P3_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P3))')';
+        all_chan_P4_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P4))')';
+        all_chan_P5_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P5))')';
+        all_chan_P6_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P6))')';
+        all_chan_P7_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P7))')';
+        all_chan_P8_deoxy{subID}{n} = nanmean(squeeze(dataD{1,n}(1:141,P8))')'; 
+        
+        all_chan_F1_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,F1))')';
+        all_chan_F2_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,F2))')';
+        all_chan_F3_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,F3))')';
+        all_chan_F4_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,F4))')';
+        all_chan_P1_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P1))')';
+        all_chan_P2_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P2))')';
+        all_chan_P3_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P3))')';
+        all_chan_P4_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P4))')';
+        all_chan_P5_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P5))')';
+        all_chan_P6_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P6))')';
+        all_chan_P7_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P7))')';
+        all_chan_P8_tooxy{subID}{n} = nanmean(squeeze(dataT{1,n}(1:141,P8))')'; 
+end
+
+
+% all_chan_2_oxy{subID} = squeeze(yHRF_SS(:,1,:,2));
+% all_chan_3_oxy{subID} = squeeze(yHRF_SS(:,1,:,3));
+% all_chan_4_oxy{subID} = squeeze(yHRF_SS(:,1,:,4));
+% 
+% all_chan_1_deoxy{subID} = squeeze(yHRF_SS(:,2,:,1));
+% all_chan_2_deoxy{subID} = squeeze(yHRF_SS(:,2,:,2));
+% all_chan_3_deoxy{subID} = squeeze(yHRF_SS(:,2,:,3));
+% all_chan_4_deoxy{subID} = squeeze(yHRF_SS(:,2,:,4));
+% 
+% all_chan_1_totoxy{subID} = squeeze(yHRF_SS(:,3,:,1));
+% all_chan_2_totoxy{subID} = squeeze(yHRF_SS(:,3,:,2));
+% all_chan_3_totoxy{subID} = squeeze(yHRF_SS(:,3,:,3));
+% all_chan_4_totoxy{subID} = squeeze(yHRF_SS(:,3,:,4));
+
+% test = squeeze(yHRF_SS(:,1,:,:));
+
+% for n = 1:42;
+%       for  m = 1:size(stim);
+%    
+%     xam{n} = nanmax( test(40:120,   n, m  ));
+%     
+%      end
+%     
+% end
+
+
+
+end
+end
+
+%%
+%%
+for m = 1:30;
+    ax_F1{m} = all_chan_F1_oxy{1,m}{1,1};
+    ax_F2{m} = all_chan_F2_oxy{1,m}{1,1};
+    ax_F3{m} = all_chan_F3_oxy{1,m}{1,1};
+    ax_F4{m} = all_chan_F4_oxy{1,m}{1,1};
+    ax_P1{m} = all_chan_P1_oxy{1,m}{1,1};
+    ax_P2{m} = all_chan_P2_oxy{1,m}{1,1};
+    ax_P3{m} = all_chan_P3_oxy{1,m}{1,1};
+    ax_P4{m} = all_chan_P4_oxy{1,m}{1,1};
+    ax_P5{m} = all_chan_P5_oxy{1,m}{1,1};
+    ax_P6{m} = all_chan_P6_oxy{1,m}{1,1};
+    ax_P7{m} = all_chan_P7_oxy{1,m}{1,1};
+    ax_P8{m} = all_chan_P8_oxy{1,m}{1,1};
+    
+    ay_F1{m} = all_chan_F1_oxy{1,m}{1,2};
+    ay_F2{m} = all_chan_F2_oxy{1,m}{1,2};
+    ay_F3{m} = all_chan_F3_oxy{1,m}{1,2};
+    ay_F4{m} = all_chan_F4_oxy{1,m}{1,2};
+    ay_P1{m} = all_chan_P1_oxy{1,m}{1,2};
+    ay_P2{m} = all_chan_P2_oxy{1,m}{1,2};
+    ay_P3{m} = all_chan_P3_oxy{1,m}{1,2};
+    ay_P4{m} = all_chan_P4_oxy{1,m}{1,2};
+    ay_P5{m} = all_chan_P5_oxy{1,m}{1,2};
+    ay_P6{m} = all_chan_P6_oxy{1,m}{1,2};
+    ay_P7{m} = all_chan_P7_oxy{1,m}{1,2};
+    ay_P8{m} = all_chan_P8_oxy{1,m}{1,2};
+    
+    bx_F1{m} = all_chan_F1_oxy{1,m}{1,3};
+    bx_F2{m} = all_chan_F2_oxy{1,m}{1,3};
+    bx_F3{m} = all_chan_F3_oxy{1,m}{1,3};
+    bx_F4{m} = all_chan_F4_oxy{1,m}{1,3};
+    bx_P1{m} = all_chan_P1_oxy{1,m}{1,3};
+    bx_P2{m} = all_chan_P2_oxy{1,m}{1,3};
+    bx_P3{m} = all_chan_P3_oxy{1,m}{1,3};
+    bx_P4{m} = all_chan_P4_oxy{1,m}{1,3};
+    bx_P5{m} = all_chan_P5_oxy{1,m}{1,3};
+    bx_P6{m} = all_chan_P6_oxy{1,m}{1,3};
+    bx_P7{m} = all_chan_P7_oxy{1,m}{1,3};
+    bx_P8{m} = all_chan_P8_oxy{1,m}{1,3};
+    
+    by_F1{m} = all_chan_F1_oxy{1,m}{1,4};
+    by_F2{m} = all_chan_F2_oxy{1,m}{1,4};
+    by_F3{m} = all_chan_F3_oxy{1,m}{1,4};
+    by_F4{m} = all_chan_F4_oxy{1,m}{1,4};
+    by_P1{m} = all_chan_P1_oxy{1,m}{1,4};
+    by_P2{m} = all_chan_P2_oxy{1,m}{1,4};
+    by_P3{m} = all_chan_P3_oxy{1,m}{1,4};
+    by_P4{m} = all_chan_P4_oxy{1,m}{1,4};
+    by_P5{m} = all_chan_P5_oxy{1,m}{1,4};
+    by_P6{m} = all_chan_P6_oxy{1,m}{1,4};
+    by_P7{m} = all_chan_P7_oxy{1,m}{1,4};
+    by_P8{m} = all_chan_P8_oxy{1,m}{1,4};
+end
+%%
+
+AX_F1 = cell2mat(ax_F1) * 1000000;
+AX_F1(AX_F1==0)=NaN;
+AX_F2 = cell2mat(ax_F2) * 1000000;
+AX_F2(AX_F2==0)=NaN;
+AX_F3 = cell2mat(ax_F3) * 1000000;
+AX_F3(AX_F3==0)=NaN;
+AX_F4 = cell2mat(ax_F4) * 1000000;
+AX_F4(AX_F4==0)=NaN;
+
+AX_P1 = cell2mat(ax_P1) * 1000000;
+AX_P1(AX_P1==0)=NaN;
+AX_P2 = cell2mat(ax_P2) * 1000000;
+AX_P2(AX_P2==0)=NaN;
+AX_P3 = cell2mat(ax_P3) * 1000000;
+AX_P3(AX_P3==0)=NaN;
+AX_P4 = cell2mat(ax_P4) * 1000000;
+AX_P4(AX_P4==0)=NaN;
+AX_P5 = cell2mat(ax_P5) * 1000000;
+AX_P5(AX_P5==0)=NaN;
+AX_P6 = cell2mat(ax_P6) * 1000000;
+AX_P6(AX_P6==0)=NaN;
+AX_P7 = cell2mat(ax_P7) * 1000000;
+AX_P7(AX_P7==0)=NaN;
+AX_P8 = cell2mat(ax_P8) * 1000000;
+AX_P8(AX_P8==0)=NaN;
+
+AY_F1 = cell2mat(ay_F1) * 1000000;
+AY_F1(AY_F1==0)=NaN;
+AY_F2 = cell2mat(ay_F2) * 1000000;
+AY_F2(AY_F2==0)=NaN;
+AY_F3 = cell2mat(ay_F3) * 1000000;
+AY_F3(AY_F3==0)=NaN;
+AY_F4 = cell2mat(ay_F4) * 1000000;
+AY_F4(AY_F4==0)=NaN;
+AY_P1 = cell2mat(ay_P1) * 1000000;
+AY_P1(AY_P1==0)=NaN;
+AY_P2 = cell2mat(ay_P2) * 1000000;
+AY_P2(AY_P2==0)=NaN;
+AY_P3 = cell2mat(ay_P3) * 1000000;
+AY_P3(AY_P3==0)=NaN;
+AY_P4 = cell2mat(ay_P4) * 1000000;
+AY_P4(AY_P4==0)=NaN;
+AY_P5 = cell2mat(ay_P5) * 1000000;
+AY_P5(AY_P5==0)=NaN;
+AY_P6 = cell2mat(ay_P6) * 1000000;
+AY_P6(AY_P6==0)=NaN;
+AY_P7 = cell2mat(ay_P7) * 1000000;
+AY_P7(AY_P7==0)=NaN;
+AY_P8 = cell2mat(ay_P8) * 1000000;
+AY_P8(AY_P8==0)=NaN;
+
+
+BX_F1 = cell2mat(bx_F1) * 1000000;
+BX_F1(BX_F1==0)=NaN;
+BX_F2 = cell2mat(bx_F2) * 1000000;
+BX_F2(BX_F2==0)=NaN;
+BX_F3 = cell2mat(bx_F3) * 1000000;
+BX_F3(BX_F3==0)=NaN;
+BX_F4 = cell2mat(bx_F4) * 1000000;
+BX_F4(BX_F4==0)=NaN;
+BX_P1 = cell2mat(bx_P1) * 1000000;
+BX_P1(BX_P1==0)=NaN;
+BX_P2 = cell2mat(bx_P2) * 1000000;
+BX_P2(BX_P2==0)=NaN;
+BX_P3 = cell2mat(bx_P3) * 1000000;
+BX_P3(BX_P3==0)=NaN;
+BX_P4 = cell2mat(bx_P4) * 1000000;
+BX_P4(BX_P4==0)=NaN;
+BX_P5 = cell2mat(bx_P5) * 1000000;
+BX_P5(BX_P5==0)=NaN;
+BX_P6 = cell2mat(bx_P6) * 1000000;
+BX_P6(BX_P6==0)=NaN;
+BX_P7 = cell2mat(bx_P7) * 1000000;
+BX_P7(BX_P7==0)=NaN;
+BX_P8 = cell2mat(bx_P8) * 1000000;
+BX_P8(BX_P8==0)=NaN;
+
+BY_F1 = cell2mat(by_F1) * 1000000;
+BY_F1(BY_F1==0)=NaN;
+BY_F2 = cell2mat(by_F2) * 1000000;
+BY_F2(BY_F2==0)=NaN;
+BY_F3 = cell2mat(by_F3) * 1000000;
+BY_F3(BY_F3==0)=NaN;
+BY_F4 = cell2mat(by_F4) * 1000000;
+BY_F4(BY_F4==0)=NaN;
+BY_P1 = cell2mat(by_P1) * 1000000;
+BY_P1(BY_P1==0)=NaN;
+BY_P2 = cell2mat(by_P2) * 1000000;
+BY_P2(BY_P2==0)=NaN;
+BY_P3 = cell2mat(by_P3) * 1000000;
+BY_P3(BY_P3==0)=NaN;
+BY_P4 = cell2mat(by_P4) * 1000000;
+BY_P4(BY_P4==0)=NaN;
+BY_P5 = cell2mat(by_P5) * 1000000;
+BY_P5(BY_P5==0)=NaN;
+BY_P6 = cell2mat(by_P6) * 1000000;
+BY_P6(BY_P6==0)=NaN;
+BY_P7 = cell2mat(by_P7) * 1000000;
+BY_P7(BY_P7==0)=NaN;
+BY_P8 = cell2mat(by_P8) * 1000000;
+BY_P8(BY_P8==0)=NaN;
+
+% MFS = ;;
+% PBI = ;
+
+%%
+%find clusters
+for m = 1:141;
+[corr_r(m), sig(m)] =    corr( AY_P2(m,:)'   , MFS(:,1),'Type','Spearman', 'rows','complete');
+end
+
+find_rows = diff(find(sig>0.05)');
+what_place_in_rows = find(diff(find(sig>0.05)')>1);
+find_rows(what_place_in_rows)
+
+%%
+%find threhold cluster length to compare with the found cluster
+% [maxlength ] = skau_corr_spearman_cluster(AY_F4, MFS, 1000);
+% X = sort(maxlength);
+% X(950)
+
+% [maxlength ] = skau_corr_pearson_cluster(AY_P8, PBI, 1000);
+% X = sort(maxlength);
+% X(950)
+
+%%
+%group MFS according to score
+MFS_1 = nanmean( [ AY_F1(:,1)' ; AY_F1(:,21)' ; AY_F1(:,22)' ; AY_F1(:,26)' ; AY_F1(:,27)' ;  AY_F1(:,28)']);
+MFS_2 = nanmean( [ AY_F1(:,5)' ; AY_F1(:,7)' ; AY_F1(:,12)' ; AY_F1(:,16)' ; AY_F1(:,19)' ;  AY_F1(:,20)']);
+MFS_3 = nanmean( [ AY_F1(:,3)' ; AY_F1(:,4)' ; AY_F1(:,6)' ; AY_F1(:,11)' ; AY_F1(:,14)' ;  AY_F1(:,15)']);
+MFS_4 = nanmean( [ AY_F1(:,9)' ; AY_F1(:,13)' ; AY_F1(:,17)' ; AY_F1(:,18)' ; AY_F1(:,24)' ;  AY_F1(:,29)']);
+MFS_5 = nanmean( [ AY_F1(:,2)' ; AY_F1(:,8)' ; AY_F1(:,10)' ; AY_F1(:,23)' ; AY_F1(:,25)' ;  AY_F1(:,30)']);
+
+
+%%
+%plot curves with highlighted TOI
+figure;
+subplot(1,2,1)
+plot( MFS_1, 'Color', [0.00,0.45,0.74]), hold all,
+plot( MFS_2, 'Color' , [0.85,0.33,0.10]),
+plot( MFS_3, 'Color', [0.93,0.69,0.13])
+plot( MFS_4, 'Color', [0.49,0.18,0.56])
+plot( MFS_5, 'Color', [0.47,0.67,0.19])
+a = get(gca,'Children');
+set(a(1),'LineWidth', 2)
+set(a(2),'LineWidth', 2)
+set(a(3),'LineWidth', 2)
+set(a(4),'LineWidth', 2)
+set(a(5),'LineWidth', 2)
+patch( [124 140 140 124], [-0.1 -0.1 0.15 0.15], 'm', 'FaceAlpha', 0.1)
+axis([0 141 -0.1 0.1])
+xticks([0 20 80 140])
+xticklabels({'-2','0','6', '12'})
+ylabel('Deoxy-Hb micromolar')
+xlabel('Seconds')
+
