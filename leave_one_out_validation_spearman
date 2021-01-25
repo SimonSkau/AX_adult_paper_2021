@@ -8,7 +8,7 @@ output = nan( 2, size(comb_,1) );
 
 for j = 1:size(comb_,1) % for each jackknife replicate
 
-    % get all  TBV  ICV estimates
+    % get all  value_1 and value_2 estimates
     tmp_V2  = value_2;
     tmp_V1  = value_1;
 
