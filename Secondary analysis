@@ -1,0 +1,475 @@
+%Secondary analysis
+% First we created two new .nirs files for each participant. In the first
+% file we took away all AX, BX and AY trials, and made all AY trials unique
+%, called CSN_AY
+% the second file was the same but change AY and BX, called CSN_BX.
+%use the same pipeline as the original analysis.
+
+clc
+%clear all
+% close all
+
+patcon = {'CSN_BX'}; %or patcon = {'CSN_AY'};
+patconLength = [30];
+for subType = 1;
+
+for subID = 1:patconLength(subType);
+load([patcon{1} '_' sprintf('%02d',subID)  '.nirs'],'-mat');
+
+[subID]
+%trange = [-2 12];
+fs = length(t)/max(t);
+tIncMan = ones(size(d(:,1))); 
+procResult.dod = hmrIntensity2OD(d);
+
+procResult.SD = enPruneChannels(d,SD,ones(size(t)),[1e-3  1e+0 ],2,[0.0 40.0],0);
+
+procResult.SD.MeasListAct(end/2+1:end) = procResult.SD.MeasListAct(1:end/2); %This shouldn't be necessary, not sure why it is
+
+procResult.dod = hmrBandpassFilt(procResult.dod,fs,0.05,0.5);
+
+
+procResult.tInc = ones(size(t));
+%Try removing 1st principal component from whole dataset
+ncomp = 0;
+procResult.dod = enPCAFilter(procResult.dod,procResult.SD,procResult.tInc,[ncomp ncomp]);
+
+
+STDEVthresh = 30;
+AMPthresh =  1;
+[procResult.tInc, procResult.tIncCh] = hmrMotionArtifactByChannel(procResult.dod, fs, procResult.SD, ones(length(d),1), 1, 5, STDEVthresh, AMPthresh); %procResult.tInc was before procResult.SD
+%[procResult.tIncPCA, procResult.tIncChPCA] = hmrMotionArtifactByChannel(dod_PCA, fs, procResult.SD, ones(length(d),1), 1, 5, STDEVthresh, AMPthresh); %procResult.tInc was before procResult.SD
+
+
+p = 0.99; %recommended in the littreture, -1 to not use spline
+procResult.dod = hmrMotionCorrectSpline(procResult.dod, t, procResult.SD, [procResult.tInc, procResult.tIncCh], p); %procResult.tIncCh
+%procResult.dodSplinePCA = hmrMotionCorrectSpline(dod_PCA, t, procResult.SD, [procResult.tInc, procResult.tIncCh], p); %procResult.tIncCh
+
+%[procResult.dodPCA,svs,nSV] = hmrMotionCorrectPCA(procResult.SD, procResult.dodSpline, procResult.tInc, nSV );
+
+%procResult.dodPCA = hmrBandpassFilt(procResult.dodPCArecursePCA,fs,0.01,0.2);
+
+
+%Convert to conc
+procResult.dc = hmrOD2Conc(procResult.dod,procResult.SD,[6 6]);
+%procResult.dcPCA = hmrOD2Conc(procResult.dodPCA,procResult.SD,[6 6]);
+
+% y_reg = hmrSSRegressionByChannel(y, SD, rhoSD_ssThresh, flagSSmethod)
+trange = [-2 12];
+glmSolveMethod = 1; %least square
+idxBasis = 1; %guassian
+paramsBasis = [0.5 0.5];    %width and spacing for the guassian [0.1 3.0 10.0 1.8 3.0 10.0]; % need to understand this one!!!!!!
+rhoSD_ssThresh = 15;
+flagSSmethod = 1; 
+driftOrder = 3;
+flagMotionCorrect = 0;
+Aaux = []; %zeros(length(d),8);
+%[yavg, yavgstd, tHRF, nTrials, ynew, yresid, ysum2, beta, yR]
+[yHRF_SS, ~, tHRF] = hmrDeconvHRF_DriftSS(procResult.dc, s, t, procResult.SD, Aaux, ones(length(t),1), trange, glmSolveMethod, idxBasis, paramsBasis, rhoSD_ssThresh, flagSSmethod, driftOrder, flagMotionCorrect );
+% yHRF_SS has makeup of (141 timepoints, 3 chromophores, 43 channels, 4 trial types) 
+
+
+F1	=	[	25	26	32	33	];
+F2	=	[	27	28	29	30	];
+F3	=	[	34	35	36		];
+F4	=	[	31	37	38		];
+P1	=	[	1	2	12		];
+P2	=	[	5	7	8		];
+P3	=	[	3	4	11		];
+P4	=	[	6	17	18		];
+P5	=	[	14	15	16		];
+P6	=	[	19	20	22		];
+P7	=	[	13	23	24		];
+P8	=	[	9	10	21		];
+
+% 3 here means tot-Gb
+test = squeeze(yHRF_SS(:,3,:,:));
+
+%avarge the channels in to ROIs
+for m = 1:size(stim);
+    
+  test_F1{m}  = nanmean(    [test(1:140, F1, m )]'  )';
+  test_F2{m}  = nanmean(    [test(1:140, F2, m )]'  )';
+  test_F3{m}  = nanmean(    [test(1:140, F3, m )]'  )';
+  test_F4{m}  = nanmean(    [test(1:140, F4, m )]'  )';
+  test_P1{m}  = nanmean(    [test(1:140, P1, m )]'  )';
+  test_P2{m}  = nanmean(    [test(1:140, P2, m )]'  )';
+  test_P3{m}  = nanmean(    [test(1:140, P3, m )]'  )';
+  test_P4{m}  = nanmean(    [test(1:140, P4, m )]'  )';
+  test_P5{m}  = nanmean(    [test(1:140, P5, m )]'  )';
+  test_P6{m}  = nanmean(    [test(1:140, P6, m )]'  )';
+  test_P7{m}  = nanmean(    [test(1:140, P7, m )]'  )';
+  test_P8{m}  = nanmean(    [test(1:140, P8, m )]'  )';  
+  
+end
+    
+testF1 = cell2mat(test_F1);
+testF2 = cell2mat(test_F2);
+testF3 = cell2mat(test_F3);
+testF4 = cell2mat(test_F4);
+testP1 = cell2mat(test_P1);
+testP2 = cell2mat(test_P2);
+testP3 = cell2mat(test_P3);
+testP4 = cell2mat(test_P4);
+testP5 = cell2mat(test_P5);
+testP6 = cell2mat(test_P6);
+testP7 = cell2mat(test_P7);
+testP8 = cell2mat(test_P8);
+
+% find peak, both which time point and what is the concentration 
+for  m = 1:size(stim); 
+    xam1(m) = nanmax( testF1(40:120, m  ));
+    
+          if    xam1(m) == 0;
+           index1(m) = NaN;
+             else
+         index1(m) = find(testF1(:,m)==xam1(m));
+          end
+    
+    
+    
+    %index1(m) = find(testF1(:,m)==xam1(m));
+end
+for  m = 1:size(stim); 
+    xam2(m) = nanmax( testF2(40:120, m  ));
+     if    xam2(m) == 0;
+           index2(m) = NaN;
+             else
+          index2(m) = find(testF2(:,m)==xam2(m));
+          end
+   
+end
+for  m = 1:size(stim); 
+    xam3(m) = nanmax( testF3(40:120, m  ));
+     if    xam3(m) == 0;
+           index3(m) = NaN;
+             else
+          index3(m) = find(testF3(:,m)==xam3(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam4(m) = nanmax( testF4(40:120, m  ));
+     if    xam4(m) == 0;
+           index4(m) = NaN;
+             else
+          index4(m) = find(testF4(:,m)==xam4(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam5(m) = nanmax( testP1(40:120, m  ));
+     if    xam5(m) == 0;
+           index5(m) = NaN;
+             else
+          index5(m) = find(testP1(:,m)==xam5(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam6(m) = nanmax( testP2(40:120, m  ));
+     if    xam6(m) == 0;
+           index6(m) = NaN;
+             else
+          index6(m) = find(testP2(:,m)==xam6(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam7(m) = nanmax( testP3(40:120, m  ));
+     if    xam7(m) == 0;
+           index7(m) = NaN;
+             else
+          index7(m) = find(testP3(:,m)==xam7(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam8(m) = nanmax( testP4(40:120, m  ));
+     if    xam8(m) == 0;
+           index8(m) = NaN;
+             else
+          index8(m) = find(testP4(:,m)==xam8(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam9(m) = nanmax( testP5(40:120, m  ));
+     if    xam9(m) == 0;
+           index9(m) = NaN;
+             else
+          index9(m) = find(testP5(:,m)==xam9(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam10(m) = nanmax( testP6(40:120, m  ));
+     if    xam10(m) == 0;
+           index10(m) = NaN;
+             else
+          index10(m) = find(testP6(:,m)==xam10(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam11(m) = nanmax( testP7(40:120, m  ));
+     if    xam11(m) == 0;
+           index11(m) = NaN;
+             else
+          index11(m) = find(testP7(:,m)==xam11(m));
+          end
+end
+for  m = 1:size(stim); 
+    xam12(m) = nanmax( testP8(40:120, m  ));
+     if    xam12(m) == 0;
+           index12(m) = NaN;
+             else
+          index12(m) = find(testP8(:,m)==xam12(m));
+          end
+end
+
+% index here is each timpoint the peak was reached. 
+standard_BX{subID} = [nanstd(index1); nanstd(index2); nanstd(index3); nanstd(index4);...
+nanstd(index5); nanstd(index6); nanstd(index7); nanstd(index8);...
+nanstd(index9); nanstd(index10); nanstd(index11); nanstd(index12)];
+
+% save all indexes
+time{subID} = [index1; index2; index3; index4; ...
+ index5; index6; index7; index8; ...
+ index9; index10; index11; index12];
+
+% AY_peak{subID} = [xam1; xam2; xam3; xam4; ...
+%  xam5; xam6; xam7; xam8; ...
+%  xam9; xam10; xam11; xam12];
+
+% xam is the concentration at the peak for each
+BX_peak{subID} = [xam1; xam2; xam3; xam4; ...
+ xam5; xam6; xam7; xam8; ...
+ xam9; xam10; xam11; xam12];
+
+% back to baseline
+for m = 1:size(stim);
+    
+  test_F1b{m}  = nanmean(    [test(20:140, F1, m )]'  )';
+  test_F2b{m}  = nanmean(    [test(20:140, F2, m )]'  )';
+  test_F3b{m}  = nanmean(    [test(20:140, F3, m )]'  )';
+  test_F4b{m}  = nanmean(    [test(20:140, F4, m )]'  )';
+  test_P1b{m}  = nanmean(    [test(20:140, P1, m )]'  )';
+  test_P2b{m}  = nanmean(    [test(20:140, P2, m )]'  )';
+  test_P3b{m}  = nanmean(    [test(20:140, P3, m )]'  )';
+  test_P4b{m}  = nanmean(    [test(20:140, P4, m )]'  )';
+  test_P5b{m}  = nanmean(    [test(20:140, P5, m )]'  )';
+  test_P6b{m}  = nanmean(    [test(20:140, P6, m )]'  )';
+  test_P7b{m}  = nanmean(    [test(20:140, P7, m )]'  )';
+  test_P8b{m}  = nanmean(    [test(20:140, P8, m )]'  )';  
+  
+end
+    
+testF1b = cell2mat(test_F1b);
+testF2b = cell2mat(test_F2b);
+testF3b = cell2mat(test_F3b);
+testF4b = cell2mat(test_F4b);
+testP1b = cell2mat(test_P1b);
+testP2b = cell2mat(test_P2b);
+testP3b = cell2mat(test_P3b);
+testP4b = cell2mat(test_P4b);
+testP5b = cell2mat(test_P5b);
+testP6b = cell2mat(test_P6b);
+testP7b = cell2mat(test_P7b);
+testP8b = cell2mat(test_P8b);
+
+
+
+for m = 1:size(stim);  
+    
+[ value1(m), index1b(m) ] = min( abs( test_F1b{1,m}(1) - test_F1b{1,m}(80:121) ) );
+[ value2(m), index2b(m) ] = min( abs( test_F2b{1,m}(1) - test_F2b{1,m}(80:121) ) );
+[ value3(m), index3b(m) ] = min( abs( test_F3b{1,m}(1) - test_F3b{1,m}(80:121) ) );
+[ value4(m), index4b(m) ] = min( abs( test_F4b{1,m}(1) - test_F4b{1,m}(80:121) ) );
+
+[ value5(m), index5b(m) ] = min( abs( test_P1b{1,m}(1) - test_P1b{1,m}(80:121) ) );
+[ value6(m), index6b(m) ] = min( abs( test_P2b{1,m}(1) - test_P2b{1,m}(80:121) ) );
+[ value7(m), index7b(m) ] = min( abs( test_P3b{1,m}(1) - test_P3b{1,m}(80:121) ) );
+[ value8(m), index8b(m) ] = min( abs( test_P4b{1,m}(1) - test_P4b{1,m}(80:121) ) );
+
+[ value9(m), index9b(m) ]   = min( abs( test_P5b{1,m}(1) - test_P5b{1,m}(80:121) ) );
+[ value10(m), index10b(m) ] = min( abs( test_P6b{1,m}(1) - test_P6b{1,m}(80:121) ) );
+[ value11(m), index11b(m) ] = min( abs( test_P7b{1,m}(1) - test_P7b{1,m}(80:121) ) );
+[ value12(m), index12b(m) ] = min( abs( test_P8b{1,m}(1) - test_P8b{1,m}(80:121) ) );
+
+end
+time_late{subID} = [index1b; index2b; index3b; index4b; ...
+ index5b; index6b; index7b; index8b; ...
+ index9b; index10b; index11b; index12b];
+
+end
+end
+
+%%
+%time to peak analysis
+
+
+clear BX
+for m = 1:30;
+   for  n = 1:12;
+       
+  BX{n,m} =  nanmean(time{1,m}(n,:));
+  
+   end
+end
+
+BXtime = cell2mat(BX);
+BXtime = BXtime';
+
+clear AY
+
+for m = 1:30;
+   for  n = 1:12;
+       
+  AY{n,m} =  nanmean(time{1,m}(n,:));
+  
+   end
+end
+
+AYtime = cell2mat(AY);
+AYtime = AYtime';
+
+
+[RHO1,PVAL1] = corr(AYtime(:,1) - BXtime(:,1), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO2,PVAL2] = corr(AYtime(:,2) - BXtime(:,2), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO3,PVAL3] = corr(AYtime(:,3) - BXtime(:,3), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO4,PVAL4] = corr(AYtime(:,4) - BXtime(:,4), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO5,PVAL5] = corr(AYtime(:,5) - BXtime(:,5), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO6,PVAL6] = corr(AYtime(:,6) - BXtime(:,6), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO7,PVAL7] = corr(AYtime(:,7) - BXtime(:,7), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO8,PVAL8] = corr(AYtime(:,8) - BXtime(:,8), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO9,PVAL9] = corr(AYtime(:,9) - BXtime(:,9), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO10,PVAL10] = corr(AYtime(:,10) - BXtime(:,10), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO11,PVAL11] = corr(AYtime(:,11) - BXtime(:,11), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO12,PVAL12] = corr(AYtime(:,12) - BXtime(:,12), MFS, 'type', 'Spearman', 'rows','complete');
+
+[RHO1 RHO2 RHO3 RHO4 RHO5 RHO6 RHO7 RHO8 RHO9 RHO10 RHO11 RHO12]'
+
+[PVAL1 PVAL2 PVAL3 PVAL4 PVAL5 PVAL6 PVAL7 PVAL8 PVAL9 PVAL10 PVAL11 PVAL12]'
+
+output = leave_one_out_validation( PBI, AYtime(:,3) - BXtime(:,3) )
+max(output(2,:) )
+%%
+%time to baseline analysis
+
+
+clear BX
+for m = 1:30;
+   for  n = 1:12;
+       
+  BX{n,m} =  nanmean(time_late{1,m}(n,:));
+  
+   end
+end
+
+BXtime = cell2mat(BX);
+BXtime = BXtime';
+
+clear AY
+
+for m = 1:30;
+   for  n = 1:12;
+       
+  AY{n,m} =  nanmean(time_late{1,m}(n,:));
+  
+   end
+end
+
+AYtime = cell2mat(AY);
+AYtime = AYtime';
+
+
+[RHO1,PVAL1] = corr(AYtime(:,1) - BXtime(:,1), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO2,PVAL2] = corr(AYtime(:,2) - BXtime(:,2), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO3,PVAL3] = corr(AYtime(:,3) - BXtime(:,3), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO4,PVAL4] = corr(AYtime(:,4) - BXtime(:,4), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO5,PVAL5] = corr(AYtime(:,5) - BXtime(:,5), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO6,PVAL6] = corr(AYtime(:,6) - BXtime(:,6), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO7,PVAL7] = corr(AYtime(:,7) - BXtime(:,7), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO8,PVAL8] = corr(AYtime(:,8) - BXtime(:,8), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO9,PVAL9] = corr(AYtime(:,9) - BXtime(:,9), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO10,PVAL10] = corr(AYtime(:,10) - BXtime(:,10), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO11,PVAL11] = corr(AYtime(:,11) - BXtime(:,11), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO12,PVAL12] = corr(AYtime(:,12) - BXtime(:,12), MFS, 'type', 'Spearman', 'rows','complete');
+
+[RHO1 RHO2 RHO3 RHO4 RHO5 RHO6 RHO7 RHO8 RHO9 RHO10 RHO11 RHO12]'
+
+[PVAL1 PVAL2 PVAL3 PVAL4 PVAL5 PVAL6 PVAL7 PVAL8 PVAL9 PVAL10 PVAL11 PVAL12]'
+
+output = leave_one_out_validation( PBI, AYtime(:,3) - BXtime(:,3) )
+max(output(2,:) )
+
+
+%%
+%test of homogenous hemodynamic response 
+
+AY = cell2mat( standard_AY  );
+AY(AY==0)=NaN;
+
+BX = cell2mat( standard_BX  );
+BX(BX==0)=NaN;
+
+
+[RHO1,PVAL1] = corr(AY(:,1) - BX(:,1), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO2,PVAL2] = corr(AY(:,2) - BX(:,2), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO3,PVAL3] = corr(AY(:,3) - BX(:,3), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO4,PVAL4] = corr(AY(:,4) - BX(:,4), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO5,PVAL5] = corr(AY(:,5) - BX(:,5), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO6,PVAL6] = corr(AY(:,6) - BX(:,6), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO7,PVAL7] = corr(AY(:,7) - BX(:,7), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO8,PVAL8] = corr(AY(:,8) - BX(:,8), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO9,PVAL9] = corr(AY(:,9) - BX(:,9), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO10,PVAL10] = corr(AY(:,10) - BX(:,10), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO11,PVAL11] = corr(AY(:,11) - BX(:,11), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO12,PVAL12] = corr(AY(:,12) - BX(:,12), MFS, 'type', 'Spearman', 'rows','complete');
+
+[RHO1 RHO2 RHO3 RHO4 RHO5 RHO6 RHO7 RHO8 RHO9 RHO10 RHO11 RHO12]'
+
+[PVAL1 PVAL2 PVAL3 PVAL4 PVAL5 PVAL6 PVAL7 PVAL8 PVAL9 PVAL10 PVAL11 PVAL12]'
+
+
+%%
+
+clear BX
+for m = 1:30;
+   for  n = 1:12;
+       
+  BX{n,m} =  nanmean(time{1,m}(n,:));
+  
+   end
+end
+
+BXtime = cell2mat(BX);
+BXtime = BXtime';
+
+clear AY
+
+for m = 1:30;
+   for  n = 1:12;
+       
+  AY{n,m} =  nanmean(time{1,m}(n,:));
+  
+   end
+end
+
+AYtime = cell2mat(AY);
+AYtime = AYtime';
+
+
+%%
+[RHO1,PVAL1] = corr(AYtime(:,1) - BXtime(:,1), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO2,PVAL2] = corr(AYtime(:,2) - BXtime(:,2), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO3,PVAL3] = corr(AYtime(:,3) - BXtime(:,3), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO4,PVAL4] = corr(AYtime(:,4) - BXtime(:,4), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO5,PVAL5] = corr(AYtime(:,5) - BXtime(:,5), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO6,PVAL6] = corr(AYtime(:,6) - BXtime(:,6), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO7,PVAL7] = corr(AYtime(:,7) - BXtime(:,7), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO8,PVAL8] = corr(AYtime(:,8) - BXtime(:,8), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO9,PVAL9] = corr(AYtime(:,9) - BXtime(:,9), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO10,PVAL10] = corr(AYtime(:,10) - BXtime(:,10), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO11,PVAL11] = corr(AYtime(:,11) - BXtime(:,11), MFS, 'type', 'Spearman', 'rows','complete');
+[RHO12,PVAL12] = corr(AYtime(:,12) - BXtime(:,12), MFS, 'type', 'Spearman', 'rows','complete');
+
+[RHO1 RHO2 RHO3 RHO4 RHO5 RHO6 RHO7 RHO8 RHO9 RHO10 RHO11 RHO12]'
+
+[PVAL1 PVAL2 PVAL3 PVAL4 PVAL5 PVAL6 PVAL7 PVAL8 PVAL9 PVAL10 PVAL11 PVAL12]'
+
+output = leave_one_out_validation( PBI, AY(:,3) - BX(:,3) )
+max(output(2,:) )
