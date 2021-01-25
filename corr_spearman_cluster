@@ -1,0 +1,37 @@
+function [maxlength ] = corr_spearman_cluster(hemoglobin, value_to_permute, iteration);
+
+% hemoglobin, fnirs data
+% value_to_permute, value to compare with
+% iteration, number of permutaion iteration
+
+rng(1891);
+
+
+
+for n = 1:iteration;
+  
+    X = length(value_to_permute);
+    XX = randperm(X);
+    Y =  sortrows([value_to_permute XX'],2);
+    
+    for m = 1:length(hemoglobin);
+    
+        [corr_r(m), sig(m)] =    corr(hemoglobin(m,:)' ,Y(:,1),'Type','Spearman', 'rows','complete');
+
+    end
+
+   %[max_, ind_]=max(diff(find(PBSI7>0.05)')); max_ = max_-1; ind_ = ind_+2;
+    max_ = max(diff(find(sig>0.05)')); max_ = max_-1; 
+
+   maxlength(n) = max_-1;
+   
+   if mod(n,10)==0; fprintf([num2str(n) '\n']); end
+   
+end
+
+end
+
+
+
+
+
